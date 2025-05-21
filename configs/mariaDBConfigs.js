@@ -12,7 +12,7 @@ exports.init = async () => {
             host: 'localhost',
             user: 'root', 
             password: '',
-            database: 'hotel',
+            database: 'clinica',
             port: 3306, 
             multipleStatements: true
             

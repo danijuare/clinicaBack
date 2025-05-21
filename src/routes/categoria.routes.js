@@ -24,9 +24,6 @@ api.post('/addCategoria', [mdAuth.ensureAuth], categoriaController.addCategoria)
 api.put('/updateCategoria/:id', [mdAuth.ensureAuth], categoriaController.updateCategoria);
 api.delete('/deteleCategoria/:id', [mdAuth.ensureAuth], categoriaController.deleteCategoria);
 
-//Agregar una imagen
-api.post('/addImageCategoria/:id', multipartMiddleware, categoriaController.addImageCategoria);
-api.get('/getImageCategoria/:fileName', categoriaController.getImageCategoria);
 
 
 
