@@ -14,5 +14,10 @@ api.get('/getAsignacionesPendientes', asignacionController.getAsignacionesPendie
 
 api.post('/addAsignacionConsulta', asignacionController.addAsignacionConsulta);
 api.get('/getAsignacionesPendientesVentanilla/:id', asignacionController.getAsignacionesPendientesVentanilla);
+api.get('/getAsignacionesPorVentanilla/:id', asignacionController.getAsignacionesPorVentanilla);
+api.get('/getAsignacionesPorVentanillaRevisadas/:id', asignacionController.getAsignacionesPorVentanillaRevisadas);
+
+api.get('/updateAtendido/:id', asignacionController.updateAtendido);
+api.get('/updateRevisado/:id', asignacionController.updateRevisado);
 
 module.exports = api;

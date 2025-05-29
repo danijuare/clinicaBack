@@ -193,7 +193,8 @@ exports.login = async (req, res) => {
                 idusuario: user.idusuario,
                 nombre: user.nombre,
                 login: user.login,
-                condicion: user.condicion
+                condicion: user.condicion,
+                rol: user.rol
             }
         });
 

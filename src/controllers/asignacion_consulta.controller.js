@@ -40,7 +40,7 @@ exports.getAsignaciones = async (req, res, next) => {
     } catch (err) {
         console.error(err);
         res.status(500).send({ message: 'Error al Obtener las Asignaciones' });
-    }finally {
+    } finally {
         if (connection) {
             await connection.end();
         }
@@ -81,7 +81,7 @@ exports.getAsignacionesPendientes = async (req, res, next) => {
     } catch (err) {
         console.error(err);
         res.status(500).send({ message: 'Error al Obtener las Asignaciones Pendientes' });
-    }finally {
+    } finally {
         if (connection) {
             await connection.end();
         }
@@ -190,6 +190,85 @@ exports.getAsignacionesPendientesVentanilla = async (req, res, next) => {
     }
 }
 
+exports.getAsignacionesPorVentanilla = async (req, res, next) => {
+    let connection
+    try {
+        const { id } = req.params;
+        //conexion a la base de datos await
+        connection = await db.init();
+        //consulta a realizar
+        const query = `SELECT 
+            v.idventanillas,
+            v.nombre AS nombre_ventanilla,
+            tc.nombre AS tipo_consulta,
+            ac.idasignacion_consulta,
+            ac.nombre_cliente,
+            ac.telefono_cliente,
+            ac.descripcion AS motivo_consulta,
+            ac.fecha_hora_creacion,
+            ac.atendido,
+            ac.revisado,
+            ac.fecha_hora_salida
+        FROM ventanillas v
+        JOIN tipo_consulta tc ON v.idtipo_consulta = tc.idtipo_consulta
+        JOIN asignacion_consulta ac ON ac.idtipo_consulta = tc.idtipo_consulta
+        WHERE v.idventanillas = ?
+        AND ac.revisado = 'NO'
+        ORDER BY ac.fecha_hora_creacion ASC`;
+        const [rows] = await connection.execute(query, [id]);
+        res.status(200).send({ message: 'Asignaciones Por Ventanilla Obtenidas Exitosamente ', data: rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: 'Error al Obtener las Asignaciones Por Ventanilla' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+
+exports.getAsignacionesPorVentanillaRevisadas = async (req, res, next) => {
+    let connection
+    try {
+        const { id } = req.params;
+        //conexion a la base de datos await
+        connection = await db.init();
+        //consulta a realizar
+        const query = `SELECT 
+            v.idventanillas,
+            v.nombre AS nombre_ventanilla,
+            tc.nombre AS tipo_consulta,
+            ac.idasignacion_consulta,
+            ac.nombre_cliente,
+            ac.telefono_cliente,
+            ac.descripcion AS motivo_consulta,
+            ac.fecha_hora_creacion,
+            ac.fecha_hora_salida,
+            ac.atendido,
+            ac.revisado,
+            ac.fecha_hora_salida
+        FROM ventanillas v
+        JOIN tipo_consulta tc ON v.idtipo_consulta = tc.idtipo_consulta
+        JOIN asignacion_consulta ac ON ac.idtipo_consulta = tc.idtipo_consulta
+        WHERE v.idventanillas = ?
+        AND ac.revisado = 'SI'
+        ORDER BY ac.fecha_hora_creacion ASC`;
+        //guardar y ejecutar
+        const [rows] = await connection.execute(query, [id]);
+        res.status(200).send({ message: 'Asignaciones Por Ventanilla Revisadas Obtenidas Exitosamente ', data: rows });
+        //await connection.end();
+    } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: 'Error al Obtener las Asignaciones Por Ventanilla Revisadas' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+
+
+
 exports.getVentanillas = async (req, res, next) => {
     let connection
     try {
@@ -206,35 +285,108 @@ exports.getVentanillas = async (req, res, next) => {
     } catch (err) {
         console.error(err);
         res.status(500).send({ message: 'Error al Obtener las Ventanillas' });
-    }finally {
+    } finally {
         if (connection) {
             await connection.end();
         }
     }
 }
 
+exports.updateAtendido = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+        const idasignacion_consulta = req.params.id;
+
+        const query = `
+            UPDATE asignacion_consulta
+            SET atendido = 'SI', fecha_hora_salida = NOW()
+            WHERE idasignacion_consulta = ?
+        `;
+        const [result] = await connection.execute(query, [idasignacion_consulta]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).send({ message: 'Asignación no encontrada o ya actualizada' });
+        }
+
+        res.status(200).send({
+            message: 'Asignación marcada como Atendida correctamente',
+            id: idasignacion_consulta
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: 'Error al actualizar la asignación', error: err });
+    } finally {
+        if (connection) await connection.end();
+    }
+};
+
+exports.updateRevisado = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+        const idasignacion_consulta = req.params.id;
+
+        const query = `
+            UPDATE asignacion_consulta
+            SET revisado = 'SI', fecha_hora_salida = NOW()
+            WHERE idasignacion_consulta = ?
+        `;
+        const [result] = await connection.execute(query, [idasignacion_consulta]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).send({ message: 'Asignación no encontrada o ya actualizada' });
+        }
+
+        res.status(200).send({
+            message: 'Asignación marcada como revisada correctamente',
+            id: idasignacion_consulta
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: 'Error al actualizar la asignación', error: err });
+    } finally {
+        if (connection) await connection.end();
+    }
+};
+
+
 /**
  * SELECT
-    asi.idasignacion_consulta,
-    asi.idtipo_consulta,
-    asi.descripcion,
-    asi.nombre_cliente,
-    asi.telefono_cliente,
-    asi.fecha_hora_creacion,
-    asi.condicion,
-    asi.atendido,
-    asi.fecha_hora_salida,
-    t.nombre AS nombre_tipo_consulta,
-    v.nombre AS nombre_ventanilla
-FROM asignacion_consulta asi
-INNER JOIN tipo_consulta t ON asi.idtipo_consulta = t.idtipo_consulta
-LEFT JOIN (
-    SELECT idtipo_consulta, nombre, idventanillas
-    FROM ventanillas
-    GROUP BY idtipo_consulta, nombre
-) v ON asi.idtipo_consulta = v.idtipo_consulta
-WHERE v.idventanillas = '4'
-and asi.atendido = 'NO'
-ORDER BY asi.fecha_hora_creacion ASC
- */
+	a.*,
+	t.nombre AS tipo_consulta_nombre
+FROM asignacion_consulta a
+INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
+WHERE a.atendido = 'SI' AND a.revisado = 'SI';
 
+
+SELECT
+	a.*,
+	t.nombre AS tipo_consulta_nombre
+FROM asignacion_consulta a
+INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
+WHERE atendido = 'NO' AND revisado = 'SI';
+
+
+SELECT 
+    v.idventanillas,
+    v.nombre AS nombre_ventanilla,
+    COUNT(ac.idasignacion_consulta) AS total_atendidos
+FROM asignacion_consulta ac
+JOIN tipo_consulta tc ON ac.idtipo_consulta = tc.idtipo_consulta
+JOIN ventanillas v ON tc.idtipo_consulta = v.idtipo_consulta
+WHERE ac.atendido = 'SI'
+GROUP BY v.idventanillas, v.nombre;
+
+
+SELECT
+	a.*,
+	t.nombre AS consulta,
+	v.nombre AS ventanilla
+FROM asignacion_consulta a
+INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
+INNER JOIN ventanillas v ON a.idtipo_consulta = v.idtipo_consulta
+
+
+
+ */
