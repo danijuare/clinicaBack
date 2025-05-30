@@ -1,6 +1,8 @@
 'use strict'
 
 const db = require('../../configs/mariaDBConfigs');
+//PARA REPORTES
+const PDFDocument = require('pdfkit-table');
 
 //Funcion de prueba
 exports.prueba = async (req, res) => {
@@ -10,9 +12,8 @@ exports.prueba = async (req, res) => {
 exports.getAsignaciones = async (req, res, next) => {
     let connection
     try {
-        //conexion a la base de datos await
         connection = await db.init();
-        //consulta a realizar
+
         const query = `SELECT
             asi.idasignacion_consulta,
             asi.idtipo_consulta,
@@ -33,10 +34,10 @@ exports.getAsignaciones = async (req, res, next) => {
             GROUP BY idtipo_consulta, nombre
         ) v ON asi.idtipo_consulta = v.idtipo_consulta
         ORDER BY asi.fecha_hora_creacion ASC`;
-        //guardar y ejecutar
+
         const [rows] = await connection.execute(query);
         res.status(200).send({ message: 'Asignaciones Obtenidas Exitosamente ', data: rows });
-        //await connection.end();
+
     } catch (err) {
         console.error(err);
         res.status(500).send({ message: 'Error al Obtener las Asignaciones' });
@@ -50,9 +51,9 @@ exports.getAsignaciones = async (req, res, next) => {
 exports.getAsignacionesPendientes = async (req, res, next) => {
     let connection
     try {
-        //conexion a la base de datos await
+
         connection = await db.init();
-        //consulta a realizar
+
         const query = `SELECT
             asi.idasignacion_consulta,
             asi.idtipo_consulta,
@@ -74,10 +75,10 @@ exports.getAsignacionesPendientes = async (req, res, next) => {
         ) v ON asi.idtipo_consulta = v.idtipo_consulta
         WHERE asi.atendido = 'NO'
         ORDER BY asi.fecha_hora_creacion ASC`;
-        //guardar y ejecutar
+
         const [rows] = await connection.execute(query);
         res.status(200).send({ message: 'Asignaciones Pendientes Obtenidas Exitosamente ', data: rows });
-        //await connection.end();
+
     } catch (err) {
         console.error(err);
         res.status(500).send({ message: 'Error al Obtener las Asignaciones Pendientes' });
@@ -91,17 +92,16 @@ exports.getAsignacionesPendientes = async (req, res, next) => {
 exports.addAsignacionConsulta = async (req, res) => {
     let connection;
     try {
-        // conexión a la base de datos
+
         connection = await db.init();
 
-        // extraer los datos del cuerpo de la petición
         const {
             idtipo_consulta,
             descripcion,
             nombre_cliente,
             telefono_cliente,
-            fecha_hora_creacion, // asegurarse de enviar este campo en formato DATETIME válido (YYYY-MM-DD HH:mm:ss)
-            fecha_hora_salida // opcional, también formato válido si se envía
+            fecha_hora_creacion,
+            fecha_hora_salida
         } = req.body;
 
         const condicion = 1;
@@ -128,10 +128,8 @@ exports.addAsignacionConsulta = async (req, res) => {
 
         const [result] = await connection.execute(queryInsert, values);
 
-        // obtener el ID del nuevo registro
         const insertedId = result.insertId;
 
-        // recuperar el registro insertado
         const [newRecord] = await connection.execute(
             `SELECT * FROM asignacion_consulta WHERE idasignacion_consulta = ?`,
             [insertedId]
@@ -194,9 +192,9 @@ exports.getAsignacionesPorVentanilla = async (req, res, next) => {
     let connection
     try {
         const { id } = req.params;
-        //conexion a la base de datos await
+
         connection = await db.init();
-        //consulta a realizar
+
         const query = `SELECT 
             v.idventanillas,
             v.nombre AS nombre_ventanilla,
@@ -231,9 +229,9 @@ exports.getAsignacionesPorVentanillaRevisadas = async (req, res, next) => {
     let connection
     try {
         const { id } = req.params;
-        //conexion a la base de datos await
+
         connection = await db.init();
-        //consulta a realizar
+
         const query = `SELECT 
             v.idventanillas,
             v.nombre AS nombre_ventanilla,
@@ -253,10 +251,10 @@ exports.getAsignacionesPorVentanillaRevisadas = async (req, res, next) => {
         WHERE v.idventanillas = ?
         AND ac.revisado = 'SI'
         ORDER BY ac.fecha_hora_creacion ASC`;
-        //guardar y ejecutar
+
         const [rows] = await connection.execute(query, [id]);
         res.status(200).send({ message: 'Asignaciones Por Ventanilla Revisadas Obtenidas Exitosamente ', data: rows });
-        //await connection.end();
+
     } catch (err) {
         console.error(err);
         res.status(500).send({ message: 'Error al Obtener las Asignaciones Por Ventanilla Revisadas' });
@@ -272,16 +270,16 @@ exports.getAsignacionesPorVentanillaRevisadas = async (req, res, next) => {
 exports.getVentanillas = async (req, res, next) => {
     let connection
     try {
-        //conexion a la base de datos await
+
         connection = await db.init();
-        //consulta a realizar
+
         const query = `SELECT v.*,t.* FROM ventanillas v
         INNER JOIN tipo_consulta t ON v.idtipo_consulta = t.idtipo_consulta
         WHERE v.condicion = 1 AND t.condicion = 1`;
-        //guardar y ejecutar
+
         const [rows] = await connection.execute(query);
         res.status(200).send({ message: 'Ventanillas Obtenidas Exitosamente ', data: rows });
-        //await connection.end();
+
     } catch (err) {
         console.error(err);
         res.status(500).send({ message: 'Error al Obtener las Ventanillas' });
@@ -351,18 +349,561 @@ exports.updateRevisado = async (req, res) => {
 };
 
 
+//REPORTE 1
+exports.generatePDFConsultasAtendidas = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+
+        const { fecha_inicio, fecha_fin } = req.body;
+
+        if (!fecha_inicio || !fecha_fin) {
+            return res.status(400).send({ message: 'Debe proporcionar fecha_inicio y fecha_fin en el query string.' });
+        }
+
+        const consultaSQL = `
+            SELECT
+                a.idasignacion_consulta,
+                a.fecha_hora_salida,
+                a.nombre_cliente,
+                a.telefono_cliente,
+                a.atendido,
+                a.revisado,
+                t.nombre AS tipo_consulta_nombre
+            FROM asignacion_consulta a
+            INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
+            WHERE a.atendido = 'SI' AND a.revisado = 'SI'
+            AND DATE(a.fecha_hora_salida) BETWEEN ? AND ?
+        `;
+
+        const [resultados] = await connection.execute(consultaSQL, [fecha_inicio, fecha_fin]);
+
+        if (resultados.length > 0) {
+            const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+
+            doc.fontSize(16).text('Clínica | UMG', { align: 'center' });
+            doc.fontSize(12).text('Teléfono: +502 5821-6179', { align: 'center' });
+            doc.fontSize(14).text(`Consultas Atendidas y Revisadas del ${fecha_inicio} al ${fecha_fin}`, { align: 'center' });
+            doc.moveDown(2);
+
+            const headers = [
+                'ID Ticket',
+                'Tipo Consulta',
+                'Nombre Cliente',
+                'Teléfono Cliente',
+                'Fecha y Hora de Atención',
+                'Atendido',
+                'Revisado'
+            ];
+
+            const rows = resultados.map(row => [
+                row.idasignacion_consulta,
+                row.tipo_consulta_nombre,
+                row.nombre_cliente,
+                row.telefono_cliente,
+                new Date(row.fecha_hora_salida).toLocaleString('es-ES', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                }),
+                row.atendido,
+                row.revisado
+            ]);
+
+            await doc.table({ headers, rows }, {
+                columnSpacing: 5,
+                padding: 5,
+                prepareHeader: () => doc.fontSize(10).font('Helvetica-Bold'),
+                prepareRow: () => doc.fontSize(9).font('Helvetica')
+            });
+
+            doc.moveDown(2);
+            doc.fontSize(12).text('Clínica UMG', 10, doc.page.height - 70, { align: 'center' });
+            doc.fontSize(10).text('Teléfono: +502 5821-6179', 10, doc.page.height - 60, { align: 'center' });
+            doc.fontSize(10).text('Dirección: Villa Nueva UMG', 10, doc.page.height - 45, { align: 'center' });
+
+            const pdfFileName = `consultas_atendidas_${fecha_inicio}_a_${fecha_fin}.pdf`;
+            res.setHeader('Content-Disposition', `attachment; filename="${pdfFileName}"`);
+            res.setHeader('Content-type', 'application/pdf');
+
+            doc.pipe(res);
+            doc.end();
+        } else {
+            res.status(404).send({ message: 'No hay consultas atendidas y revisadas en el rango de fechas.' });
+        }
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Error al generar el PDF.' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+exports.generateConsultasAtendidas = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+
+        const { fecha_inicio, fecha_fin } = req.body;
+
+        if (!fecha_inicio || !fecha_fin) {
+            return res.status(400).send({ message: 'Debe proporcionar fecha_inicio y fecha_fin en el query string.' });
+        }
+
+        const consultaSQL = `
+            SELECT
+                a.idasignacion_consulta,
+                a.fecha_hora_salida,
+                a.nombre_cliente,
+                a.telefono_cliente,
+                a.atendido,
+                a.revisado,
+                t.nombre AS tipo_consulta_nombre
+            FROM asignacion_consulta a
+            INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
+            WHERE a.atendido = 'SI' AND a.revisado = 'SI'
+            AND DATE(a.fecha_hora_salida) BETWEEN ? AND ?
+        `;
+
+        const [resultados] = await connection.execute(consultaSQL, [fecha_inicio, fecha_fin]);
+
+        if (resultados.length > 0) {
+            res.json(resultados);
+        } else {
+            res.status(404).send({ message: 'No hay consultas atendidas y revisadas en el rango de fechas.' });
+        }
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Error al generar datos.' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+//REPORTE 2
+exports.generatePDFConsultasRevisadasNoAtendidas = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+
+        const { fecha_inicio, fecha_fin } = req.body;
+
+        if (!fecha_inicio || !fecha_fin) {
+            return res.status(400).send({ message: 'Debe proporcionar fecha_inicio y fecha_fin en el query string.' });
+        }
+        const consultaSQL = `
+            SELECT
+                a.idasignacion_consulta,
+                a.fecha_hora_salida,
+                a.nombre_cliente,
+                a.telefono_cliente,
+                a.atendido,
+                a.revisado,
+                t.nombre AS tipo_consulta_nombre
+            FROM asignacion_consulta a
+            INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
+            WHERE a.atendido = 'NO' AND a.revisado = 'SI'
+            AND DATE(a.fecha_hora_salida) BETWEEN ? AND ?
+        `;
+
+        const [resultados] = await connection.execute(consultaSQL, [fecha_inicio, fecha_fin]);
+
+        if (resultados.length > 0) {
+            const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+
+            doc.fontSize(16).text('Clínica | UMG', { align: 'center' });
+            doc.fontSize(12).text('Teléfono: +502 5821-6179', { align: 'center' });
+            doc.fontSize(14).text(`Consultas Revisadas pero No Atendidas del ${fecha_inicio} al ${fecha_fin}`, { align: 'center' });
+            doc.moveDown(2);
+
+            const headers = [
+                'ID Ticket',
+                'Tipo Consulta',
+                'Nombre Cliente',
+                'Teléfono Cliente',
+                'Fecha y Hora Programada',
+                'Atendido',
+                'Revisado'
+            ];
+
+            const rows = resultados.map(row => [
+                row.idasignacion_consulta,
+                row.tipo_consulta_nombre,
+                row.nombre_cliente,
+                row.telefono_cliente,
+                row.fecha_hora_salida
+                    ? new Date(row.fecha_hora_salida).toLocaleString('es-ES', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    })
+                    : 'Sin Fecha',
+                row.atendido,
+                row.revisado
+            ]);
+
+            await doc.table({
+                headers,
+                rows
+            }, {
+                columnSpacing: 5,
+                padding: 5,
+                prepareHeader: () => doc.fontSize(10).font('Helvetica-Bold'),
+                prepareRow: (row, i) => doc.fontSize(9).font('Helvetica')
+            });
+
+            doc.moveDown(2);
+            doc.fontSize(12).text('Clínica UMG', 10, doc.page.height - 70, { align: 'center' });
+            doc.fontSize(10).text('Teléfono: +502 5821-6179', 10, doc.page.height - 60, { align: 'center' });
+            doc.fontSize(10).text('Dirección: Villa Nueva UMG', 10, doc.page.height - 45, { align: 'center' });
+
+            const pdfFileName = `consultas_revisadas_no_atendidas.pdf`;
+            res.setHeader('Content-Disposition', `attachment; filename="${pdfFileName}"`);
+            res.setHeader('Content-type', 'application/pdf');
+
+            doc.pipe(res);
+            doc.end();
+        } else {
+            res.status(404).send({ message: 'No hay consultas revisadas sin atender.' });
+        }
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Error al generar el PDF.' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+exports.generateConsultasRevisadasNoAtendidas = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+
+        const { fecha_inicio, fecha_fin } = req.body;
+
+        if (!fecha_inicio || !fecha_fin) {
+            return res.status(400).send({ message: 'Debe proporcionar fecha_inicio y fecha_fin en el query string.' });
+        }
+
+        const consultaSQL = `
+            SELECT
+                a.idasignacion_consulta,
+                a.fecha_hora_salida,
+                a.nombre_cliente,
+                a.telefono_cliente,
+                a.atendido,
+                a.revisado,
+                t.nombre AS tipo_consulta_nombre
+            FROM asignacion_consulta a
+            INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
+            WHERE a.atendido = 'NO' AND a.revisado = 'SI'
+            AND DATE(a.fecha_hora_salida) BETWEEN ? AND ?
+        `;
+
+        const [resultados] = await connection.execute(consultaSQL, [fecha_inicio, fecha_fin]);
+
+        if (resultados.length > 0) {
+            res.json(resultados);
+        } else {
+            res.status(404).send({ message: 'No hay consultas revisadas y no atendidas' });
+        }
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Error al generar datos.' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+//REPORTE 3
+exports.generatePDFConsultasTotalPorVentanilla = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+
+        const { fecha_inicio, fecha_fin } = req.body;
+
+        if (!fecha_inicio || !fecha_fin) {
+            return res.status(400).send({ message: 'Debe proporcionar fecha_inicio y fecha_fin en el query string.' });
+        }
+        const consultaSQL = `
+                SELECT 
+                v.idventanillas,
+                v.nombre AS nombre_ventanilla,
+                COUNT(ac.idasignacion_consulta) AS total_atendidos
+            FROM asignacion_consulta ac
+            JOIN tipo_consulta tc ON ac.idtipo_consulta = tc.idtipo_consulta
+            JOIN ventanillas v ON tc.idtipo_consulta = v.idtipo_consulta
+            WHERE ac.atendido = 'SI' 
+            AND DATE(ac.fecha_hora_salida) BETWEEN ? AND ?
+            GROUP BY v.idventanillas, v.nombre;
+        `;
+
+        const [resultados] = await connection.execute(consultaSQL, [fecha_inicio, fecha_fin]);
+
+        if (resultados.length > 0) {
+            const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+
+            doc.fontSize(16).text('Clínica | UMG', { align: 'center' });
+            doc.fontSize(12).text('Teléfono: +502 5821-6179', { align: 'center' });
+            doc.fontSize(14).text(`Consultas Canitdad Tickets Atendidos Por Ventanilla del ${fecha_inicio} al ${fecha_fin}`, { align: 'center' });
+            doc.moveDown(2);
+
+            const headers = [
+                'ID Ventanilla',
+                'Nombre Ventanilla',
+                'Cantidad Atendidos',
+            ];
+
+            const rows = resultados.map(row => [
+                row.idventanillas,
+                row.nombre_ventanilla,
+                row.total_atendidos
+            ]);
+
+            await doc.table({
+                headers,
+                rows
+            }, {
+                columnSpacing: 5,
+                padding: 5,
+                prepareHeader: () => doc.fontSize(10).font('Helvetica-Bold'),
+                prepareRow: (row, i) => doc.fontSize(9).font('Helvetica')
+            });
+
+            doc.moveDown(2);
+            doc.fontSize(12).text('Clínica UMG', 10, doc.page.height - 70, { align: 'center' });
+            doc.fontSize(10).text('Teléfono: +502 5821-6179', 10, doc.page.height - 60, { align: 'center' });
+            doc.fontSize(10).text('Dirección: Villa Nueva UMG', 10, doc.page.height - 45, { align: 'center' });
+
+            const pdfFileName = `consultas_atendidos_por_ventanilla.pdf`;
+            res.setHeader('Content-Disposition', `attachment; filename="${pdfFileName}"`);
+            res.setHeader('Content-type', 'application/pdf');
+
+            doc.pipe(res);
+            doc.end();
+        } else {
+            res.status(404).send({ message: 'No hay datos.' });
+        }
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Error al generar el PDF.' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+exports.generateConsultasTotalPorVentanilla = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+
+        const { fecha_inicio, fecha_fin } = req.body;
+
+        if (!fecha_inicio || !fecha_fin) {
+            return res.status(400).send({ message: 'Debe proporcionar fecha_inicio y fecha_fin en el query string.' });
+        }
+
+        const consultaSQL = `
+                SELECT 
+                v.idventanillas,
+                v.nombre AS nombre_ventanilla,
+                COUNT(ac.idasignacion_consulta) AS total_atendidos
+            FROM asignacion_consulta ac
+            JOIN tipo_consulta tc ON ac.idtipo_consulta = tc.idtipo_consulta
+            JOIN ventanillas v ON tc.idtipo_consulta = v.idtipo_consulta
+            WHERE ac.atendido = 'SI' 
+            AND DATE(ac.fecha_hora_salida) BETWEEN ? AND ?
+            GROUP BY v.idventanillas, v.nombre;
+        `;
+
+        const [resultados] = await connection.execute(consultaSQL, [fecha_inicio, fecha_fin]);
+
+        if (resultados.length > 0) {
+            res.json(resultados);
+        } else {
+            res.status(404).send({ message: 'No hay consultas Total por Ventanilla' });
+        }
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Error al generar datos.' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+//REPORTE 4
+exports.generatePDFConsultasGeneral = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+        const consultaSQL = `
+            SELECT
+                a.*,
+                t.nombre AS consulta,
+                v.nombre AS ventanilla
+            FROM asignacion_consulta a
+            INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
+            INNER JOIN ventanillas v ON a.idtipo_consulta = v.idtipo_consulta
+        `;
+
+        const [resultados] = await connection.execute(consultaSQL);
+
+        if (resultados.length > 0) {
+            const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+
+            doc.fontSize(16).text('Clínica | UMG', { align: 'center' });
+            doc.fontSize(12).text('Teléfono: +502 5821-6179', { align: 'center' });
+            doc.fontSize(14).text('Consultas Reporte General', { align: 'center' });
+            doc.moveDown(2);
+
+            const headers = [
+                'ID Ticket',
+                'Ventanilla',
+                'Tipo Consulta',
+                'Nombre Cliente',
+                'Telefono Cliente',
+                'Descripcion',
+                'Fecha C Ticket',
+                'Fecha Atendido',
+                'Atendido',
+                'Revisado',
+            ];
+
+            const rows = resultados.map(row => [
+                row.idasignacion_consulta,
+                row.ventanilla,
+                row.consulta,
+                row.nombre_cliente,
+                row.telefono_cliente,
+                row.descripcion,
+                new Date(row.fecha_hora_creacion).toLocaleString('es-ES', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                }),
+                new Date(row.fecha_hora_salida).toLocaleString('es-ES', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                }),
+                row.atendido,
+                row.revisado
+            ]);
+
+            await doc.table({
+                headers,
+                rows
+            }, {
+                columnSpacing: 5,
+                padding: 5,
+                prepareHeader: () => doc.fontSize(10).font('Helvetica-Bold'),
+                prepareRow: (row, i) => doc.fontSize(9).font('Helvetica')
+            });
+
+            doc.moveDown(2);
+            doc.fontSize(12).text('Clínica UMG', 10, doc.page.height - 70, { align: 'center' });
+            doc.fontSize(10).text('Teléfono: +502 5821-6179', 10, doc.page.height - 60, { align: 'center' });
+            doc.fontSize(10).text('Dirección: Villa Nueva UMG', 10, doc.page.height - 45, { align: 'center' });
+
+            const pdfFileName = `consultas_reporte_general.pdf`;
+            res.setHeader('Content-Disposition', `attachment; filename="${pdfFileName}"`);
+            res.setHeader('Content-type', 'application/pdf');
+
+            doc.pipe(res);
+            doc.end();
+        } else {
+            res.status(404).send({ message: 'No hay datos.' });
+        }
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Error al generar el PDF.' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+exports.generateConsultasGeneral = async (req, res) => {
+    let connection;
+    try {
+        connection = await db.init();
+
+        const { fecha_inicio, fecha_fin } = req.body;
+
+        if (!fecha_inicio || !fecha_fin) {
+            return res.status(400).send({ message: 'Debe proporcionar fecha_inicio y fecha_fin en el query string.' });
+        }
+
+        const consultaSQL = `
+            SELECT
+                a.*,
+                t.nombre AS consulta,
+                v.nombre AS ventanilla
+            FROM asignacion_consulta a
+            INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
+            INNER JOIN ventanillas v ON a.idtipo_consulta = v.idtipo_consulta
+        `;
+
+        const [resultados] = await connection.execute(consultaSQL, [fecha_inicio, fecha_fin]);
+
+        if (resultados.length > 0) {
+            res.json(resultados);
+        } else {
+            res.status(404).send({ message: 'No hay consultas General' });
+        }
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Error al generar datos.' });
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
+    }
+}
+
 /**
  * SELECT
-	a.*,
-	t.nombre AS tipo_consulta_nombre
+    a.*,
+    t.nombre AS tipo_consulta_nombre
 FROM asignacion_consulta a
 INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
 WHERE a.atendido = 'SI' AND a.revisado = 'SI';
 
 
 SELECT
-	a.*,
-	t.nombre AS tipo_consulta_nombre
+    a.*,
+    t.nombre AS tipo_consulta_nombre
 FROM asignacion_consulta a
 INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
 WHERE atendido = 'NO' AND revisado = 'SI';
@@ -380,9 +921,9 @@ GROUP BY v.idventanillas, v.nombre;
 
 
 SELECT
-	a.*,
-	t.nombre AS consulta,
-	v.nombre AS ventanilla
+    a.*,
+    t.nombre AS consulta,
+    v.nombre AS ventanilla
 FROM asignacion_consulta a
 INNER JOIN tipo_consulta t ON a.idtipo_consulta = t.idtipo_consulta
 INNER JOIN ventanillas v ON a.idtipo_consulta = v.idtipo_consulta

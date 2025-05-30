@@ -20,4 +20,17 @@ api.get('/getAsignacionesPorVentanillaRevisadas/:id', asignacionController.getAs
 api.get('/updateAtendido/:id', asignacionController.updateAtendido);
 api.get('/updateRevisado/:id', asignacionController.updateRevisado);
 
+//REPORTES
+//1
+api.post('/generatePDFConsultasAtendidas', asignacionController.generatePDFConsultasAtendidas);
+api.post('/generateConsultasAtendidas', asignacionController.generateConsultasAtendidas);
+//2
+api.post('/generatePDFConsultasRevisadasNoAtendidas', asignacionController.generatePDFConsultasRevisadasNoAtendidas);
+api.post('/generateConsultasRevisadasNoAtendidas', asignacionController.generateConsultasRevisadasNoAtendidas);
+//3
+api.post('/generatePDFConsultasTotalPorVentanilla', asignacionController.generatePDFConsultasTotalPorVentanilla);
+api.post('/generateConsultasTotalPorVentanilla', asignacionController.generateConsultasTotalPorVentanilla);
+//4
+api.post('/generatePDFConsultasGeneral', asignacionController.generatePDFConsultasGeneral);
+api.post('/generateConsultasGeneral', asignacionController.generateConsultasGeneral);
 module.exports = api;
